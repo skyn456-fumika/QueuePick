@@ -19,5 +19,5 @@ management:
 
 logging:
   level:
-    org.hibernate.SQL: WARN
+    org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: WARN

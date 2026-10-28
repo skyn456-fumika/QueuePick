@@ -44,5 +44,9 @@ public class Order {
 
     public OrderStatus getStatus() { return status; }
     public BigDecimal getUnitPrice() { return unitPrice; }
+
+    public Product getProduct() {
+        return product;
+    }
 }
 
