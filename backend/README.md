@@ -33,3 +33,34 @@
 
 ## 다음 단계
 Product/Inventory 영속화 테스트, 주문 애플리케이션 서비스 및 트랜잭션 테스트 설계.
+
+## 비관적 락 검증
+
+### 적용 방식
+JPA의 PESSIMISTIC_WRITE 사용
+
+### 실제 PostgreSQL SQL
+SELECT ... FOR NO KEY UPDATE
+
+### 테스트 조건
+- 초기 재고: 1개
+- 동시 주문: 2건
+
+### 검증 결과
+- 성공 주문: 1건
+- 실패 주문: 1건
+- 최종 재고: 0개
+- 초과 판매: 없음
+
+### 확인한 특징
+- 재고 조회 시 DB 행 잠금 획득
+- 동시 수정 요청은 잠금 해제까지 대기
+- 기존 @Version을 통한 버전 검사도 유지
+
+## 기술적 문제 해결
+
+### 동시성 제어
+
+- [재고 동시성 제어](docs/concurrency.md)
+- [경합 수준별 성능 비교](docs/performance/inventory-contention-benchmark.md)
+- [ADR-0002: 재고 락 전략 선택](docs/adr/0002-inventory-locking-strategy.md)
