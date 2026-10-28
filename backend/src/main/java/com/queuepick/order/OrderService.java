@@ -69,4 +69,55 @@ public class OrderService {
         // 7. 주문 저장
         return orderRepository.save(order);
     }
+
+    /**
+     * 비관적 락 기반 주문 생성.
+     *
+     * 재고 조회 시 DB 행 잠금을 획득하여
+     * 동일 상품에 대한 동시 재고 변경을 순차적으로 처리한다.
+     *
+     * 잠금은 트랜잭션이 종료될 때 해제된다.
+     */
+    @Transactional
+    public Order createOrderWithPessimisticLock(
+            Long productId,
+            int quantity
+    ) {
+
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "주문 수량은 1개 이상이어야 합니다."
+            );
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "상품이 존재하지 않습니다."
+                        )
+                );
+
+        OffsetDateTime now = OffsetDateTime.now();
+
+        if (now.isBefore(product.getSaleStartsAt())) {
+            throw new IllegalStateException(
+                    "아직 판매가 시작되지 않았습니다."
+            );
+        }
+
+        // 기존 방식과 다른 핵심 부분
+        Inventory inventory = inventoryRepository
+                .findByProductIdWithLock(productId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "재고 정보가 존재하지 않습니다."
+                        )
+                );
+
+        inventory.decrease(quantity);
+
+        Order order = new Order(product, quantity, now);
+
+        return orderRepository.save(order);
+    }
 }

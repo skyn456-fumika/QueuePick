@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.OptimisticLockingFailureException;
 
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @Testcontainers
+@ActiveProfiles("test")
 class OrderConcurrencyIntegrationTest {
 
     @Container
@@ -244,6 +246,98 @@ class OrderConcurrencyIntegrationTest {
 
             assertThat(result.getVersion())
                     .isEqualTo(1L);
+
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void 비관적_락으로_동시_주문시_재고_정합성을_보장한다()
+            throws Exception {
+
+        // Given: 재고 1개인 상품 준비
+        Product product = productRepository.save(
+                new Product(
+                        "한정판 상품",
+                        new BigDecimal("10000.00"),
+                        OffsetDateTime.now().minusDays(1)
+                )
+        );
+
+        inventoryRepository.save(new Inventory(product, 1));
+
+        long initialOrderCount = orderRepository.count();
+
+        int threadCount = 2;
+
+        ExecutorService executor =
+                Executors.newFixedThreadPool(threadCount);
+
+        // 두 스레드가 준비될 때까지 기다리는 용도
+        CountDownLatch ready = new CountDownLatch(threadCount);
+
+        // 두 스레드를 동시에 출발시키는 용도
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<Boolean>> futures = new ArrayList<>();
+
+        try {
+            for (int i = 0; i < threadCount; i++) {
+
+                futures.add(executor.submit(() -> {
+
+                    ready.countDown();
+
+                    // 모든 스레드가 준비될 때까지 대기
+                    start.await();
+
+                    try {
+                        orderService.createOrderWithPessimisticLock(
+                                product.getId(),
+                                1
+                        );
+                        return true;
+
+                    } catch (IllegalStateException |
+                             OptimisticLockingFailureException e) {
+
+                        // 재고 부족 또는 낙관적 락 충돌
+                        return false;
+                    }
+                }));
+            }
+
+            // 두 스레드가 준비될 때까지 대기
+            assertThat(ready.await(10, TimeUnit.SECONDS))
+                    .isTrue();
+
+            // 동시에 주문 시작
+            start.countDown();
+
+            int successCount = 0;
+
+            for (Future<Boolean> future : futures) {
+                if (future.get(15, TimeUnit.SECONDS)) {
+                    successCount++;
+                }
+            }
+
+            // Then: 정확히 하나의 주문만 성공
+            assertThat(successCount).isEqualTo(1);
+
+            // 최종 재고 확인
+            Inventory updatedInventory = inventoryRepository
+                    .findByProductId(product.getId())
+                    .orElseThrow();
+
+            assertThat(updatedInventory.getAvailableQuantity())
+                    .isZero();
+
+            // 새로운 주문이 정확히 1건 저장됐는지 확인
+            assertThat(orderRepository.count() - initialOrderCount)
+                    .isEqualTo(1);
 
         } finally {
             start.countDown();
