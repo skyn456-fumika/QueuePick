@@ -1,6 +1,7 @@
 package com.queuepick.order;
 
 import com.queuepick.product.Product;
+import com.queuepick.product.ProductNotFoundException;
 import com.queuepick.product.ProductRepository;
 import com.queuepick.inventory.Inventory;
 import com.queuepick.inventory.InventoryRepository;
@@ -92,17 +93,13 @@ public class OrderService {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "상품이 존재하지 않습니다."
-                        )
+                        new ProductNotFoundException(productId)
                 );
 
         OffsetDateTime now = OffsetDateTime.now();
 
         if (now.isBefore(product.getSaleStartsAt())) {
-            throw new IllegalStateException(
-                    "아직 판매가 시작되지 않았습니다."
-            );
+            throw new SaleNotStartedException();
         }
 
         // 기존 방식과 다른 핵심 부분

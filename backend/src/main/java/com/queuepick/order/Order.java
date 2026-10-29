@@ -48,5 +48,17 @@ public class Order {
     public Product getProduct() {
         return product;
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
 
